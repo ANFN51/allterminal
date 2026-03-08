@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import TopBar from '../TopBar/TopBar';
 import TickerStrip from '../TickerStrip/TickerStrip';
 import MarketsOverview from '../Markets/MarketsOverview';
@@ -12,9 +12,10 @@ import AIAnalyst from '../AI/AIAnalyst';
 import SentimentEngine from '../AI/SentimentEngine';
 import Portfolio from '../Portfolio/Portfolio';
 import ForexDashboard from '../Forex/ForexDashboard';
-import { STOCKS } from '@/lib/marketData';
+import BullionDashboard from '../Bullion/BullionDashboard';
+import NewsDashboard from '../News/NewsDashboard';
 
-type Tab = 'MARKETS' | 'GLOBAL' | 'HEAT MAP' | 'STOCKS' | 'CRYPTO' | 'FOREX' | 'SENTIMENT' | 'AI ANALYST' | 'PORTFOLIO';
+type Tab = 'MARKETS' | 'GLOBAL' | 'HEAT MAP' | 'STOCKS' | 'CRYPTO' | 'FOREX' | 'BULLION' | 'NEWS' | 'SENTIMENT' | 'AI ANALYST' | 'PORTFOLIO';
 
 const WATCHLIST = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'META', 'AMZN', 'TSLA', 'JPM', 'AMD', 'V', 'MA', 'UNH', 'JNJ', 'XOM', 'GS'];
 const CRYPTO_TICKERS = new Set(['BTC', 'ETH', 'SOL', 'DOGE', 'XRP', 'ADA', 'AVAX', 'MATIC', 'LINK', 'UNI', 'AAVE', 'DOT', 'SHIB', 'LTC', 'NEAR', 'ATOM', 'TON', 'ICP', 'APT', 'ARB']);
@@ -24,6 +25,33 @@ export default function Terminal() {
     const [selectedTicker, setSelectedTicker] = useState('AAPL');
     const [heatMapMode, setHeatMapMode] = useState<'stocks' | 'crypto'>('stocks');
     const [cryptoSubTab, setCryptoSubTab] = useState<'dashboard' | 'flows'>('dashboard');
+    const [watchlistQuotes, setWatchlistQuotes] = useState<Record<string, { price: number; changePct: number }>>({});
+
+    useEffect(() => {
+        let active = true;
+        const fetchWatchlist = async () => {
+            try {
+                const res = await fetch(`/api/quote?tickers=${encodeURIComponent(WATCHLIST.join(','))}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                const quotes = Array.isArray(data) ? data : [data];
+
+                if (active) {
+                    const map: Record<string, { price: number; changePct: number }> = {};
+                    quotes.forEach(q => {
+                        map[q.ticker] = { price: q.price, changePct: q.changePct };
+                    });
+                    setWatchlistQuotes(map);
+                }
+            } catch (e) {
+                console.error("Watchlist fetch failed", e);
+            }
+        };
+
+        fetchWatchlist();
+        const id = setInterval(fetchWatchlist, 15000); // refresh every 15s
+        return () => { active = false; clearInterval(id); };
+    }, []);
 
     const handleTickerSearch = (ticker: string) => {
         setSelectedTicker(ticker);
@@ -78,8 +106,13 @@ export default function Terminal() {
                                 WATCHLIST
                             </div>
                             {WATCHLIST.map(t => {
-                                const s = STOCKS[t];
-                                if (!s) return null;
+                                const s = watchlistQuotes[t];
+                                if (!s) return (
+                                    <div key={t} style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-subtle)', opacity: 0.5 }}>
+                                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{t}</div>
+                                        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Loading...</div>
+                                    </div>
+                                );
                                 return (
                                     <div key={t} onClick={() => setSelectedTicker(t)}
                                         style={{ padding: '8px 10px', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer', background: selectedTicker === t ? 'var(--amber-muted)' : 'transparent', transition: 'background 0.1s' }}
@@ -115,6 +148,12 @@ export default function Terminal() {
 
                 {/* ── FOREX ── */}
                 {activeTab === 'FOREX' && <ForexDashboard />}
+
+                {/* ── BULLION ── */}
+                {activeTab === 'BULLION' && <BullionDashboard />}
+
+                {/* ── NEWS ── */}
+                {activeTab === 'NEWS' && <NewsDashboard />}
 
                 {/* ── SENTIMENT ENGINE ── */}
                 {activeTab === 'SENTIMENT' && <SentimentEngine />}

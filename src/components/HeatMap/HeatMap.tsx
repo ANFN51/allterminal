@@ -1,7 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { HEATMAP_STOCKS } from '@/lib/marketData';
-import { MOCK_CRYPTO } from '@/lib/coinGecko';
+import stockUniverse from '@/lib/stockUniverse';
 
 interface HeatMapProps {
     mode: 'stocks' | 'crypto';
@@ -41,21 +40,62 @@ export default function HeatMap({ mode, onSelect }: HeatMapProps) {
     const [sizeBy, setSizeBy] = useState<'marketCap'>('marketCap');
     const [filter, setFilter] = useState<string>('ALL');
     const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        if (mode === 'stocks') {
-            setCells(HEATMAP_STOCKS.map(s => ({
-                ticker: s.ticker.replace(/[0-9]/g, ''),
-                name: s.name, sector: s.sector,
-                marketCap: s.marketCap, changePct: s.changePct,
-            })));
-        } else {
-            setCells(MOCK_CRYPTO.map(c => ({
-                ticker: c.symbol.toUpperCase(),
-                name: c.name, sector: c.category,
-                marketCap: c.market_cap, changePct: c.price_change_percentage_24h,
-            })));
-        }
+        let active = true;
+        const load = async () => {
+            setIsLoading(true);
+            setCells([]);
+            setFilter('ALL');
+
+            try {
+                if (mode === 'stocks') {
+                    // Fetch top 100 S&P 500 stocks as our heatmap core
+                    const s100 = stockUniverse.SP500_COMPACT.slice(0, 100);
+                    const tickers = s100.map(s => s[0] as string);
+                    const metaMap = new Map(s100.map(s => [s[0], s]));
+
+                    const res = await fetch(`/api/quote?tickers=${encodeURIComponent(tickers.join(','))}`);
+                    if (!res.ok) throw new Error('Failed to fetch stock quotes');
+                    const data = await res.json();
+                    const quotes = Array.isArray(data) ? data : [data];
+
+                    if (active) {
+                        setCells(quotes.map(q => {
+                            const meta = metaMap.get(q.ticker);
+                            return {
+                                ticker: q.ticker.replace(/[0-9]/g, ''), // Stripping arbitrary crypto suffixes if attached
+                                name: meta ? (meta[1] as string) : q.ticker,
+                                sector: meta ? (meta[2] as string) : 'Unknown',
+                                marketCap: q.marketCap || 1, // fallback to 1 to avoid zero-division in treemap
+                                changePct: q.changePct || 0,
+                            };
+                        }));
+                    }
+                } else {
+                    const res = await fetch('/api/crypto');
+                    if (!res.ok) throw new Error('Failed to fetch crypto');
+                    const data = await res.json();
+
+                    if (active) {
+                        setCells(data.map((c: any) => ({
+                            ticker: c.symbol.toUpperCase(),
+                            name: c.name,
+                            sector: c.category || 'Layer 1',
+                            marketCap: c.market_cap || 1,
+                            changePct: c.price_change_percentage_24h || 0,
+                        })));
+                    }
+                }
+            } catch (e) {
+                console.error(e);
+            } finally {
+                if (active) setIsLoading(false);
+            }
+        };
+        load();
+        return () => { active = false; };
     }, [mode]);
 
     useEffect(() => {
@@ -69,7 +109,7 @@ export default function HeatMap({ mode, onSelect }: HeatMapProps) {
     }, []);
 
     // Sector list
-    const sectors = ['ALL', ...Array.from(new Set(cells.map(c => c.sector)))];
+    const sectors = ['ALL', ...Array.from(new Set(cells.map(c => c.sector)))].filter(Boolean);
     const filtered = filter === 'ALL' ? cells : cells.filter(c => c.sector === filter);
 
     // Treemap layout (simple squarify)
@@ -104,6 +144,9 @@ export default function HeatMap({ mode, onSelect }: HeatMapProps) {
                         </button>
                     ))}
                 </div>
+                {isLoading && (
+                    <span style={{ fontSize: 9, color: 'var(--amber)', animation: 'pulse 1.5s infinite' }}>LOADING...</span>
+                )}
                 <div style={{ flex: 1 }} />
                 {/* Color legend */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -188,9 +231,9 @@ export default function HeatMap({ mode, onSelect }: HeatMapProps) {
                     </div>
                 )}
 
-                {layout.length === 0 && (
+                {layout.length === 0 && !isLoading && (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)' }}>
-                        Loading map…
+                        No data available to display map.
                     </div>
                 )}
             </div>

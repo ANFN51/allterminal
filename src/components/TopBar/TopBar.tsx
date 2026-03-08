@@ -1,4 +1,5 @@
 'use client';
+// Force Next.js HMR recompile
 import { useEffect, useState } from 'react';
 
 interface TopBarProps {
@@ -7,7 +8,7 @@ interface TopBarProps {
     onTickerSearch: (ticker: string) => void;
 }
 
-const TABS = ['MARKETS', 'GLOBAL', 'HEAT MAP', 'STOCKS', 'CRYPTO', 'FOREX', 'SENTIMENT', 'AI ANALYST', 'PORTFOLIO'];
+const TABS = ['MARKETS', 'GLOBAL', 'HEAT MAP', 'STOCKS', 'CRYPTO', 'FOREX', 'BULLION', 'NEWS', 'SENTIMENT', 'AI ANALYST', 'PORTFOLIO'];
 
 export default function TopBar({ activeTab, onTabChange, onTickerSearch }: TopBarProps) {
     const [time, setTime] = useState('');

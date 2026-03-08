@@ -1,6 +1,5 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { STOCKS, type Quote } from '@/lib/marketData';
 
 interface SentimentAsset {
     ticker: string;
@@ -17,15 +16,15 @@ interface SentimentAsset {
     signals: string[];
 }
 
-function generateSentiment(ticker: string, stock: Quote): SentimentAsset {
-    // Deterministic but realistic sentiment based on stock characteristics
-    const seed = ticker.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+function generateSentiment(ticker: string, liveQuote: any): SentimentAsset {
+    // Generate AI sentiment scores using real underlying price volatility via changePct
+    const seed = ticker.split('').reduce((a, c) => a + c.charCodeAt(0), 0) + (liveQuote.changePct * 10 || 0);
     const rand = (min: number, max: number, offset = 0) => {
         const x = Math.sin(seed + offset) * 10000;
         return min + ((x - Math.floor(x)) * (max - min));
     };
 
-    const priceSignal = stock.changePct > 1 ? 20 : stock.changePct > 0 ? 10 : stock.changePct > -1 ? -10 : -20;
+    const priceSignal = liveQuote.changePct > 1 ? 20 : liveQuote.changePct > 0 ? 10 : liveQuote.changePct > -1 ? -10 : -20;
     const baseScore = Math.round(priceSignal + rand(-25, 25, 1));
     const clampedScore = Math.max(-85, Math.min(85, baseScore));
     const bullS = Math.round(Math.max(20, Math.min(80, 50 + clampedScore / 2 + rand(-10, 10, 2))));
@@ -49,7 +48,7 @@ function generateSentiment(ticker: string, stock: Quote): SentimentAsset {
     }).slice(0, 4);
 
     return {
-        ticker, name: stock.name, type: 'stock',
+        ticker, name: ticker, type: 'stock',
         sentimentScore: clampedScore,
         bullScore: bullS, bearScore: bearS, neutralScore: neutS,
         outperformProb,
@@ -60,29 +59,36 @@ function generateSentiment(ticker: string, stock: Quote): SentimentAsset {
     };
 }
 
-const FEATURED_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'META', 'TSLA', 'AMZN', 'AMD'];
+const FEATURED_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'META', 'TSLA', 'AMZN', 'AMD', 'NFLX', 'INTC', 'CRM', 'BA', 'MCD', 'DIS'];
 
 export default function SentimentEngine() {
     const [assets, setAssets] = useState<SentimentAsset[]>([]);
     const [selected, setSelected] = useState<SentimentAsset | null>(null);
     const [sortBy, setSortBy] = useState<'sentiment' | 'outperform' | 'mentions'>('sentiment');
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const data = FEATURED_TICKERS.map(t => {
-            const stock = STOCKS[t];
-            if (!stock) return null;
-            return generateSentiment(t, stock);
-        }).filter(Boolean) as SentimentAsset[];
+        let active = true;
+        const load = async () => {
+            setLoading(true);
+            try {
+                const res = await fetch(`/api/quote?tickers=${encodeURIComponent(FEATURED_TICKERS.join(','))}`);
+                if (!res.ok) throw new Error('Failed');
+                const data = await res.json();
+                const quotes = Array.isArray(data) ? data : [data];
 
-        // Add all remaining stocks too
-        Object.values(STOCKS).forEach(s => {
-            if (!FEATURED_TICKERS.includes(s.ticker)) {
-                data.push(generateSentiment(s.ticker, s));
+                if (active) {
+                    const mappedAssets = quotes.map(q => generateSentiment(q.ticker, q));
+                    setAssets(mappedAssets);
+                    setSelected(mappedAssets[0] || null);
+                    setLoading(false);
+                }
+            } catch (e) {
+                if (active) setLoading(false);
             }
-        });
-
-        setAssets(data);
-        setSelected(data[0]);
+        };
+        load();
+        return () => { active = false; };
     }, []);
 
     const sorted = [...assets].sort((a, b) => {
@@ -96,6 +102,10 @@ export default function SentimentEngine() {
 
     const sentLabel = (score: number) =>
         score > 50 ? 'EXTREME BULL' : score > 20 ? 'BULLISH' : score > -20 ? 'NEUTRAL' : score > -50 ? 'BEARISH' : 'EXTREME BEAR';
+
+    if (loading) {
+        return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--amber)' }}>Initializing Sentiment Analytics...</div>;
+    }
 
     return (
         <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
@@ -226,7 +236,6 @@ function OutperformGauge({ prob }: { prob: number }) {
                 <span style={{ fontSize: 20, fontWeight: 900, color }}>{prob}%</span>
             </div>
             <div style={{ height: 8, background: 'var(--bg-surface)', borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
-                {/* 50% mark */}
                 <div style={{ position: 'absolute', top: 0, left: '50%', width: 1, height: '100%', background: 'var(--border-strong)', zIndex: 1 }} />
                 <div style={{
                     width: `${prob}%`, height: '100%',
@@ -295,18 +304,14 @@ function SentimentRadar({ bull, bear, neutral, outperform }: { bull: number; bea
             <div>
                 <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: 8 }}>SENTIMENT RADAR</div>
                 <svg width={160} height={160} viewBox="0 0 160 160">
-                    {/* Grid rings */}
                     {[0.25, 0.5, 0.75, 1].map(f => (
                         <polygon key={f} points={axisPts.map((p, i) => {
                             const angle = (i / axes.length) * 2 * Math.PI - Math.PI / 2;
                             return `${cx + r * f * Math.cos(angle)},${cy + r * f * Math.sin(angle)}`;
                         }).join(' ')} fill="none" stroke="rgba(255,140,0,0.08)" strokeWidth="1" />
                     ))}
-                    {/* Axis lines */}
                     {axisPts.map((p, i) => <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="rgba(255,140,0,0.1)" strokeWidth="1" />)}
-                    {/* Data */}
                     <polygon points={polyPts} fill="rgba(255,140,0,0.12)" stroke="var(--amber)" strokeWidth="1.5" />
-                    {/* Labels */}
                     {pts.map((p, i) => (
                         <text key={i} x={p.lx} y={p.ly + 4} textAnchor="middle" fill="var(--text-muted)" fontSize="7" fontFamily="var(--font-mono)">{axes[i].label}</text>
                     ))}

@@ -1,7 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { createChart, ColorType, CandlestickSeries, HistogramSeries, UTCTimestamp } from 'lightweight-charts';
-import { generateCandles, STOCKS } from '@/lib/marketData';
 import { getWsClient } from '@/lib/wsClient';
 
 interface CandlestickChartProps {
@@ -158,14 +157,7 @@ export default function CandlestickChart({ ticker, height = 340, currency }: Can
                 setSource(data.source === 'yahoo_finance' ? '● LIVE · Yahoo Finance' : '● MOCK DATA');
                 applyData(candles);
             } catch {
-                // fallback to seeded mock
-                const stock = STOCKS[ticker];
-                const basePrice = stock?.price ?? 100 + (ticker.charCodeAt(0) * 7);
-                const seed = ticker.split('').reduce((a, c) => a + c.charCodeAt(0), 0) * 17;
-                const days = range === '5d' ? 5 : range === '1mo' ? 30 : range === '3mo' ? 90 : range === '6mo' ? 180 : range === '2y' ? 730 : range === '5y' ? 1825 : 365;
-                const mocks = generateCandles(basePrice, days, 0.015, seed);
-                setSource('◌ SEEDED MOCK');
-                applyData(mocks);
+                setSource('● ERROR: API UNAVAILABLE');
             } finally {
                 setLoading(false);
             }
@@ -191,9 +183,7 @@ export default function CandlestickChart({ ticker, height = 340, currency }: Can
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [ticker, range]);
 
-    const stock = STOCKS[ticker];
-    const displayPrice = livePrice ?? stock?.price;
-    const changePct = stock?.changePct;
+    const displayPrice = livePrice;
     const currencySymbol = (currency && currency !== 'USD') ? '' : '$';
 
     return (
@@ -209,11 +199,6 @@ export default function CandlestickChart({ ticker, height = 340, currency }: Can
                         <span style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
                             {currencySymbol}{displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
                         </span>
-                        {changePct != null && (
-                            <span style={{ fontSize: 12, fontWeight: 600, color: changePct >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                                {changePct >= 0 ? '+' : ''}{changePct.toFixed(2)}%
-                            </span>
-                        )}
                     </>
                 )}
                 {/* Crosshair OHLC */}

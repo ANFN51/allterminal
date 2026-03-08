@@ -1,82 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server';
+import YahooFinance from 'yahoo-finance2';
+
+const yahooFinance = new YahooFinance();
 
 /**
- * Yahoo Finance proxy — no API key required
- * Uses the undocumented v8 quote endpoint (free, real-time delayed ~15min)
+ * Enhanced Yahoo Finance proxy
+ * Utilizes yahoo-finance2 to gracefully manage sessions, crubs, and headers.
  */
 export async function GET(req: NextRequest) {
-    const ticker = req.nextUrl.searchParams.get('ticker')?.toUpperCase();
-    if (!ticker) return NextResponse.json({ error: 'Missing ticker' }, { status: 400 });
+    const singleTicker = req.nextUrl.searchParams.get('ticker')?.toUpperCase();
+    const batchTickers = req.nextUrl.searchParams.get('tickers')?.toUpperCase();
 
-    // Try Alpha Vantage first (free tier w/ key)
-    const avKey = process.env.ALPHA_VANTAGE_KEY;
-    if (avKey && avKey !== 'demo') {
-        try {
-            const avRes = await fetch(
-                `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${ticker}&apikey=${avKey}`
-            );
-            const avData = await avRes.json();
-            const q = avData['Global Quote'];
-            if (q && q['05. price']) {
-                return NextResponse.json({
-                    ticker,
-                    price: parseFloat(q['05. price']),
-                    open: parseFloat(q['02. open']),
-                    high: parseFloat(q['03. high']),
-                    low: parseFloat(q['04. low']),
-                    change: parseFloat(q['09. change']),
-                    changePct: parseFloat(q['10. change percent']),
-                    volume: parseInt(q['06. volume']),
-                    source: 'alpha_vantage',
-                });
-            }
-        } catch { /* fall through */ }
+    if (!singleTicker && !batchTickers) {
+        return NextResponse.json({ error: 'Missing ticker or tickers parameter' }, { status: 400 });
     }
 
-    // Try Yahoo Finance v8 (no key needed)
+    const isBatch = !!batchTickers;
+    const symbols = isBatch ? batchTickers : singleTicker;
+
+    // De-duplicate and ignore empty strings
+    const uniqueSymbols = Array.from(new Set(symbols!.split(',').map(s => s.trim()).filter(Boolean)));
+
     try {
-        const yhRes = await fetch(
-            `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`,
-            {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (compatible; Antigravity/2.0)',
-                    Accept: 'application/json',
-                },
-                next: { revalidate: 15 },
-            }
-        );
-        const yhData = await yhRes.json();
-        const meta = yhData?.chart?.result?.[0]?.meta;
-        if (meta) {
-            const price = meta.regularMarketPrice ?? meta.previousClose;
-            const prevClose = meta.chartPreviousClose ?? meta.previousClose;
-            const change = price - prevClose;
-            const changePct = prevClose ? (change / prevClose) * 100 : 0;
+        const results = await yahooFinance.quote(uniqueSymbols);
+        const resultsArr = Array.isArray(results) ? results : [results];
 
-            return NextResponse.json({
-                ticker,
-                price,
-                open: meta.regularMarketOpen ?? price,
-                high: meta.regularMarketDayHigh ?? price,
-                low: meta.regularMarketDayLow ?? price,
-                change: +change.toFixed(2),
-                changePct: +changePct.toFixed(2),
-                volume: meta.regularMarketVolume ?? 0,
-                marketCap: meta.marketCap ?? null,
-                currency: meta.currency ?? 'USD',
-                exchange: meta.exchangeName ?? '',
-                fullName: meta.longName ?? meta.shortName ?? ticker,
-                source: 'yahoo_finance',
-            });
+        if (!resultsArr || resultsArr.length === 0) {
+            return NextResponse.json({ error: `No data for ${symbols}` }, { status: 404 });
         }
-    } catch { /* fall through */ }
 
-    // Fallback: return mock from our data store
-    const { STOCKS } = await import('@/lib/marketData');
-    const stock = STOCKS[ticker];
-    if (stock) {
-        return NextResponse.json({ ...stock, source: 'mock' });
+        const mappedQuotes = resultsArr.map((q: any) => ({
+            ticker: q.symbol,
+            price: q.regularMarketPrice ?? q.regularMarketPreviousClose ?? 0,
+            open: q.regularMarketOpen ?? 0,
+            high: q.regularMarketDayHigh ?? 0,
+            low: q.regularMarketDayLow ?? 0,
+            change: q.regularMarketChange ?? 0,
+            changePct: q.regularMarketChangePercent ?? 0,
+            volume: q.regularMarketVolume ?? 0,
+            marketCap: q.marketCap ?? null,
+            pe: q.trailingPE ?? null,
+            currency: q.currency ?? 'USD',
+            exchange: q.fullExchangeName ?? q.exchange ?? '',
+            fullName: q.longName ?? q.shortName ?? q.symbol,
+            source: 'yahoo_finance_2',
+        }));
+
+        if (isBatch) {
+            return NextResponse.json(mappedQuotes);
+        } else {
+            return NextResponse.json(mappedQuotes[0]);
+        }
+    } catch (err: any) {
+        return NextResponse.json({ error: `Failed to fetch quote data: ${err.message}` }, { status: 502 });
     }
-
-    return NextResponse.json({ error: `No data for ${ticker}` }, { status: 404 });
 }

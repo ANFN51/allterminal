@@ -16,39 +16,33 @@ export async function GET(_req: NextRequest) {
         const global = globalRes.status === 'fulfilled' && globalRes.value.ok
             ? await globalRes.value.json() : null;
 
-        const fgData = fg?.data?.[0];
-        const globalData = global?.data;
+        if (!fg || !global || !fg.data || !global.data) {
+            throw new Error('Failed to fetch real-time sentiment or global market data.');
+        }
+
+        const fgData = fg.data[0];
+        const globalData = global.data;
 
         return NextResponse.json({
             fear_greed: {
-                value: fgData ? parseInt(fgData.value) : 62,
-                label: fgData?.value_classification ?? 'Greed',
-                timestamp: fgData?.timestamp ?? Date.now() / 1000,
-                history: fg?.data?.map((d: { value: string; value_classification: string }) => ({
+                value: parseInt(fgData.value),
+                label: fgData.value_classification,
+                timestamp: fgData.timestamp,
+                history: fg.data.map((d: { value: string; value_classification: string }) => ({
                     value: parseInt(d.value), label: d.value_classification
-                })) ?? [],
+                })),
             },
             global_market: {
-                total_market_cap_usd: globalData?.total_market_cap?.usd ?? 3_200_000_000_000,
-                total_volume_24h_usd: globalData?.total_volume?.usd ?? 140_000_000_000,
-                btc_dominance: globalData?.market_cap_percentage?.btc ?? 52.4,
-                eth_dominance: globalData?.market_cap_percentage?.eth ?? 14.8,
-                market_cap_change_24h: globalData?.market_cap_change_percentage_24h_usd ?? 1.24,
-                active_cryptocurrencies: globalData?.active_cryptocurrencies ?? 15842,
+                total_market_cap_usd: globalData.total_market_cap?.usd ?? 0,
+                total_volume_24h_usd: globalData.total_volume?.usd ?? 0,
+                btc_dominance: globalData.market_cap_percentage?.btc ?? 0,
+                eth_dominance: globalData.market_cap_percentage?.eth ?? 0,
+                market_cap_change_24h: globalData.market_cap_change_percentage_24h_usd ?? 0,
+                active_cryptocurrencies: globalData.active_cryptocurrencies ?? 0,
             },
-            source: fgData ? 'alternative.me + coingecko' : 'mock',
+            source: 'alternative.me + coingecko',
         });
-    } catch {
-        return NextResponse.json({
-            fear_greed: { value: 62, label: 'Greed', timestamp: Date.now() / 1000, history: [] },
-            global_market: {
-                total_market_cap_usd: 3_200_000_000_000,
-                total_volume_24h_usd: 140_000_000_000,
-                btc_dominance: 52.4, eth_dominance: 14.8,
-                market_cap_change_24h: 1.24,
-                active_cryptocurrencies: 15842,
-            },
-            source: 'mock',
-        });
+    } catch (err: any) {
+        return NextResponse.json({ error: err.message }, { status: 502 });
     }
 }

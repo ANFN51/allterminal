@@ -1,5 +1,6 @@
 // ============================================================
-// WEBSOCKET CLIENT — Real-time mock price updates
+// POLLING CLIENT — Abstracted real-time price updates via /api/quote
+// Replaces the previous MockWebSocketClient.
 // ============================================================
 
 export type TickEvent = {
@@ -9,53 +10,31 @@ export type TickEvent = {
     ask: number;
     volume: number;
     timestamp: number;
+    change?: number;
+    changePct?: number;
 };
 
 type TickHandler = (event: TickEvent) => void;
 
-class MockWebSocketClient {
+class PollingPriceClient {
     private handlers: Map<string, Set<TickHandler>> = new Map();
-    private prices: Map<string, number> = new Map();
     private intervalId: ReturnType<typeof setInterval> | null = null;
-    private rng: () => number;
-
-    constructor() {
-        // Seeded random for consistent simulation
-        let seed = 12345;
-        this.rng = () => {
-            seed = (seed * 1664525 + 1013904223) & 0xffffffff;
-            return (seed >>> 0) / 0xffffffff;
-        };
-
-        // Seed starting prices
-        const startPrices: Record<string, number> = {
-            AAPL: 189.30, MSFT: 415.52, GOOGL: 165.22, AMZN: 195.40, META: 528.60,
-            NVDA: 875.40, TSLA: 172.28, JPM: 235.70, SPY: 507.86, QQQ: 435.44,
-            BTC: 87420, ETH: 3218.50, SOL: 142.30, BNB: 598.40, XRP: 0.6210,
-            DOGE: 0.1502, ADA: 0.5810, AVAX: 38.20, DOT: 7.84, LINK: 16.20,
-        };
-        for (const [k, v] of Object.entries(startPrices)) {
-            this.prices.set(k, v);
-        }
-    }
+    private isFetching = false;
 
     subscribe(ticker: string, handler: TickHandler) {
-        if (!this.handlers.has(ticker)) {
-            this.handlers.set(ticker, new Set());
+        const uTicker = ticker.toUpperCase();
+        if (!this.handlers.has(uTicker)) {
+            this.handlers.set(uTicker, new Set());
         }
-        this.handlers.get(ticker)!.add(handler);
+        this.handlers.get(uTicker)!.add(handler);
         this.startIfNeeded();
-        return () => this.unsubscribe(ticker, handler);
+        return () => this.unsubscribe(uTicker, handler);
     }
 
     unsubscribe(ticker: string, handler: TickHandler) {
-        this.handlers.get(ticker)?.delete(handler);
+        const uTicker = ticker.toUpperCase();
+        this.handlers.get(uTicker)?.delete(handler);
         if (this.countSubscriptions() === 0) this.stop();
-    }
-
-    subscribeAll(handler: TickHandler): () => void {
-        const unsubs = Array.from(this.prices.keys()).map(t => this.subscribe(t, handler));
-        return () => unsubs.forEach(u => u());
     }
 
     private countSubscriptions() {
@@ -64,7 +43,10 @@ class MockWebSocketClient {
 
     private startIfNeeded() {
         if (this.intervalId) return;
-        this.intervalId = setInterval(() => this.tick(), 300);
+        // Poll every 10 seconds
+        this.intervalId = setInterval(() => this.tick(), 10000);
+        // Do an immediate fetch payload on first connection
+        setTimeout(() => this.tick(), 100);
     }
 
     private stop() {
@@ -74,39 +56,54 @@ class MockWebSocketClient {
         }
     }
 
-    private tick() {
-        // Pick a random subset of tickers to update
+    private async tick() {
+        if (this.isFetching) return;
+
         const tickers = Array.from(this.handlers.keys());
-        const toUpdate = tickers.filter(() => this.rng() > 0.3);
+        if (tickers.length === 0) return;
 
-        for (const ticker of toUpdate) {
-            const current = this.prices.get(ticker) ?? 100;
-            const volatility = ticker === 'BTC' ? 0.0008 : ticker === 'ETH' ? 0.0010 : 0.0003;
-            const change = (this.rng() - 0.5) * 2 * volatility * current;
-            const newPrice = Math.max(current + change, 0.001);
-            this.prices.set(ticker, newPrice);
+        this.isFetching = true;
+        try {
+            // Batch process in chunks of 20 to respect reasonable URI limits and rate limits
+            for (let i = 0; i < tickers.length; i += 20) {
+                const chunk = tickers.slice(i, i + 20);
+                const res = await fetch(`/api/quote?tickers=${encodeURIComponent(chunk.join(','))}`);
+                if (!res.ok) continue;
 
-            const spread = newPrice * 0.0001;
-            const event: TickEvent = {
-                ticker,
-                price: +newPrice.toFixed(ticker === 'BTC' ? 2 : 4),
-                bid: +(newPrice - spread).toFixed(4),
-                ask: +(newPrice + spread).toFixed(4),
-                volume: Math.floor(100 + this.rng() * 10000),
-                timestamp: Date.now(),
-            };
+                const data = await res.json();
+                const quotes = Array.isArray(data) ? data : [data];
 
-            for (const handler of this.handlers.get(ticker) ?? []) {
-                handler(event);
+                for (const q of quotes) {
+                    if (!q || !q.ticker) continue;
+                    const event: TickEvent = {
+                        ticker: q.ticker,
+                        price: q.price,
+                        bid: q.price,
+                        ask: q.price,
+                        volume: q.volume,
+                        timestamp: Date.now(),
+                        change: q.change,
+                        changePct: q.changePct,
+                    };
+
+                    const handlers = this.handlers.get(q.ticker) ?? [];
+                    for (const handler of handlers) {
+                        handler(event);
+                    }
+                }
             }
+        } catch (err) {
+            console.error('Polling failed', err);
+        } finally {
+            this.isFetching = false;
         }
     }
 }
 
 // Singleton instance
-let _client: MockWebSocketClient | null = null;
+let _client: PollingPriceClient | null = null;
 
-export function getWsClient(): MockWebSocketClient {
-    if (!_client) _client = new MockWebSocketClient();
+export function getWsClient(): PollingPriceClient {
+    if (!_client) _client = new PollingPriceClient();
     return _client;
 }

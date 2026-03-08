@@ -1,6 +1,7 @@
 'use client';
-import { useState } from 'react';
-import { STOCKS, getCompetitors, fmt, fmtBig, fmtPct } from '@/lib/marketData';
+import { useState, useEffect } from 'react';
+import { fmt, fmtBig, fmtPct } from '@/lib/marketData';
+import stockUniverse from '@/lib/stockUniverse';
 import CandlestickChart from '../Charts/CandlestickChart';
 import OrderBook from './OrderBook';
 import CompetitorMap from './CompetitorMap';
@@ -13,17 +14,92 @@ const TABS = ['CHART', 'FUNDAMENTALS', 'ORDER BOOK', 'ECO MAP', 'EDGAR'];
 
 export default function StockDetail({ ticker }: StockDetailProps) {
     const [tab, setTab] = useState('CHART');
-    const stock = STOCKS[ticker];
+    const [stock, setStock] = useState<any>(null);
+    const [competitors, setCompetitors] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
 
-    if (!stock) {
+    useEffect(() => {
+        let active = true;
+        const load = async () => {
+            setLoading(true);
+            setError(false);
+            try {
+                // Find target metadata
+                const allMeta = [...stockUniverse.SP500_COMPACT, ...stockUniverse.GLOBAL_COMPACT];
+                let meta = allMeta.find(m => m[0] === ticker);
+                const name = meta ? meta[1] : ticker;
+                const sector = meta ? meta[2] : 'Unknown';
+
+                // Find competitors metadata
+                const compMeta = allMeta
+                    .filter(m => m[2] === sector && m[0] !== ticker)
+                    .slice(0, 5);
+                const compTickers = compMeta.map(m => m[0]);
+
+                const fetchTickers = [ticker, ...compTickers];
+                const res = await fetch(`/api/quote?tickers=${encodeURIComponent(fetchTickers.join(','))}`);
+                if (!res.ok) throw new Error('API failed');
+
+                const data = await res.json();
+                const quotes = Array.isArray(data) ? data : [data];
+
+                const mainQuote = quotes.find(q => q.ticker === ticker);
+                if (!mainQuote) throw new Error('Not found');
+
+                const mappedCompetitors = compMeta.map(m => {
+                    const q = quotes.find(quote => quote.ticker === m[0]);
+                    return {
+                        ticker: m[0],
+                        name: m[1],
+                        sector: m[2],
+                        price: q?.price || 0,
+                        changePct: q?.changePct || 0,
+                        marketCap: q?.marketCap || 0,
+                        pe: q?.pe || null
+                    };
+                }).filter(c => c.price > 0).sort((a, b) => b.marketCap - a.marketCap);
+
+                if (active) {
+                    setStock({
+                        ticker,
+                        name,
+                        sector,
+                        price: mainQuote.price || 0,
+                        change: mainQuote.regularMarketChange || (mainQuote.price * (mainQuote.changePct / 100) || 0),
+                        changePct: mainQuote.changePct || 0,
+                        marketCap: mainQuote.marketCap || 0,
+                        pe: mainQuote.pe || null,
+                        eps: mainQuote.eps || null,
+                        dividend: mainQuote.dividend || 0,
+                        week52High: mainQuote.week52High || mainQuote.price * 1.2,
+                        week52Low: mainQuote.week52Low || mainQuote.price * 0.8
+                    });
+                    setCompetitors(mappedCompetitors);
+                    setLoading(false);
+                }
+            } catch (err) {
+                if (active) {
+                    setError(true);
+                    setLoading(false);
+                }
+            }
+        };
+        load();
+        return () => { active = false; };
+    }, [ticker]);
+
+    if (loading) {
+        return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--amber)' }}>Loading {ticker} data...</div>;
+    }
+
+    if (error || !stock) {
         return (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 13 }}>
-                <span>Ticker <span style={{ color: 'var(--amber)' }}>{ticker}</span> not found. Try AAPL, MSFT, NVDA, TSLA…</span>
+                <span>Ticker <span style={{ color: 'var(--amber)' }}>{ticker}</span> market data unavailable.</span>
             </div>
         );
     }
-
-    const competitors = getCompetitors(ticker);
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -42,7 +118,6 @@ export default function StockDetail({ ticker }: StockDetailProps) {
                                 {stock.changePct >= 0 ? '▲' : '▼'} {Math.abs(stock.changePct).toFixed(2)}%
                             </span>
                             <span className="tag tag-amber">{stock.sector}</span>
-                            {/* SEC EDGAR link */}
                             <a href={`https://efts.sec.gov/LATEST/search-index?q=%22${stock.ticker}%22&dateRange=custom&startdt=2024-01-01&forms=10-K,10-Q,8-K`}
                                 target="_blank" rel="noopener noreferrer"
                                 className="tag"
@@ -53,43 +128,47 @@ export default function StockDetail({ ticker }: StockDetailProps) {
                         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{stock.name}</div>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span style={{ fontSize: 32, fontWeight: 700, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>${fmt(stock.price)}</span>
+                        <span style={{ fontSize: 32, fontWeight: 700, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+                            ${fmt(stock.price)}
+                        </span>
                         <span style={{ fontSize: 13, fontWeight: 500, color: stock.change >= 0 ? 'var(--green)' : 'var(--red)', marginTop: 4 }}>
                             {stock.change >= 0 ? '+' : ''}${Math.abs(stock.change).toFixed(2)} today
                         </span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, auto)', gap: '6px 24px', marginLeft: 'auto' }}>
-                        <QuickStat label="MKT CAP" value={fmtBig(stock.marketCap)} />
-                        <QuickStat label="P/E RATIO" value={stock.pe ? stock.pe.toFixed(1) : 'N/A'} />
-                        <QuickStat label="EPS (TTM)" value={stock.eps ? `$${stock.eps.toFixed(2)}` : 'N/A'} />
-                        <QuickStat label="DIVIDEND" value={stock.dividend > 0 ? `$${stock.dividend.toFixed(2)}` : 'N/A'} />
-                        <QuickStat label="52W HIGH" value={`$${fmt(stock.week52High)}`} />
-                        <QuickStat label="52W LOW" value={`$${fmt(stock.week52Low)}`} />
+                        <QuickStat label="MKT CAP" value={stock.marketCap > 0 ? fmtBig(stock.marketCap) : '—'} />
+                        <QuickStat label="P/E RATIO" value={stock.pe ? stock.pe.toFixed(1) : '—'} />
+                        <QuickStat label="EPS (TTM)" value={stock.eps ? `$${stock.eps.toFixed(2)}` : '—'} />
+                        <QuickStat label="DIVIDEND" value={stock.dividend > 0 ? `$${stock.dividend.toFixed(2)}` : '—'} />
+                        <QuickStat label="52W HIGH" value={stock.week52High ? `$${fmt(stock.week52High)}` : '—'} />
+                        <QuickStat label="52W LOW" value={stock.week52Low ? `$${fmt(stock.week52Low)}` : '—'} />
                     </div>
                 </div>
 
                 {/* 52-week range bar */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', width: 80 }}>${fmt(stock.week52Low)}</span>
-                    <div style={{ flex: 1, height: 4, background: 'var(--bg-active)', borderRadius: 2, position: 'relative' }}>
-                        <div style={{
-                            position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 2,
-                            width: `${((stock.price - stock.week52Low) / (stock.week52High - stock.week52Low)) * 100}%`,
-                            background: 'linear-gradient(90deg, var(--red), var(--amber), var(--green))'
-                        }} />
-                        <div style={{
-                            position: 'absolute',
-                            left: `${((stock.price - stock.week52Low) / (stock.week52High - stock.week52Low)) * 100}%`,
-                            transform: 'translateX(-50%)',
-                            top: -4, width: 12, height: 12, borderRadius: '50%',
-                            background: 'var(--amber)', border: '2px solid var(--bg-base)',
-                        }} />
+                {stock.week52High > stock.week52Low && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', width: 80 }}>${fmt(stock.week52Low)}</span>
+                        <div style={{ flex: 1, height: 4, background: 'var(--bg-active)', borderRadius: 2, position: 'relative' }}>
+                            <div style={{
+                                position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 2,
+                                width: `${Math.max(0, Math.min(100, ((stock.price - stock.week52Low) / (stock.week52High - stock.week52Low)) * 100))}%`,
+                                background: 'linear-gradient(90deg, var(--red), var(--amber), var(--green))'
+                            }} />
+                            <div style={{
+                                position: 'absolute',
+                                left: `${Math.max(0, Math.min(100, ((stock.price - stock.week52Low) / (stock.week52High - stock.week52Low)) * 100))}%`,
+                                transform: 'translateX(-50%)',
+                                top: -4, width: 12, height: 12, borderRadius: '50%',
+                                background: 'var(--amber)', border: '2px solid var(--bg-base)',
+                            }} />
+                        </div>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', width: 80, textAlign: 'right' }}>${fmt(stock.week52High)}</span>
+                        <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
+                            {Math.max(0, Math.min(100, (((stock.price - stock.week52Low) / (stock.week52High - stock.week52Low)) * 100))).toFixed(0)}th percentile
+                        </span>
                     </div>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)', width: 80, textAlign: 'right' }}>${fmt(stock.week52High)}</span>
-                    <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
-                        {(((stock.price - stock.week52Low) / (stock.week52High - stock.week52Low)) * 100).toFixed(0)}th percentile
-                    </span>
-                </div>
+                )}
             </div>
 
             {/* Tabs */}
@@ -110,7 +189,7 @@ export default function StockDetail({ ticker }: StockDetailProps) {
                         price={stock.price}
                         marketCap={stock.marketCap}
                         pe={stock.pe ?? 20}
-                        revenueGrowth={(stock.revenueGrowth ?? 0.1) * 100}
+                        revenueGrowth={0}
                         onSelectTicker={t => { window.location.hash = t; }}
                     />
                 )}
@@ -129,24 +208,25 @@ function QuickStat({ label, value }: { label: string; value: string }) {
     );
 }
 
-function FundamentalsTab({ stock, competitors }: { stock: typeof STOCKS[string]; competitors: typeof STOCKS[string][] }) {
+function FundamentalsTab({ stock, competitors }: { stock: any; competitors: any[] }) {
     const all = [stock, ...competitors.slice(0, 5)];
     const metrics = [
-        { label: 'Price', key: (s: typeof stock) => `$${fmt(s.price)}` },
-        { label: 'Market Cap', key: (s: typeof stock) => fmtBig(s.marketCap) },
-        { label: 'P/E Ratio', key: (s: typeof stock) => s.pe ? s.pe.toFixed(1) : '—' },
-        { label: 'EV/EBITDA', key: (s: typeof stock) => s.evEbitda ? s.evEbitda.toFixed(1) : '—' },
-        { label: 'Revenue', key: (s: typeof stock) => s.revenue ? fmtBig(s.revenue) : '—' },
-        { label: 'Rev. Growth', key: (s: typeof stock) => s.revenueGrowth != null ? fmtPct(s.revenueGrowth * 100) : '—' },
-        { label: 'Net Margin', key: (s: typeof stock) => s.netMargin != null ? `${(s.netMargin * 100).toFixed(1)}%` : '—' },
-        { label: 'Debt/Equity', key: (s: typeof stock) => s.debtEquity != null ? s.debtEquity.toFixed(2) : '—' },
-        { label: 'Analyst Target', key: (s: typeof stock) => s.analystTarget ? `$${s.analystTarget}` : '—' },
-        { label: 'Dividend', key: (s: typeof stock) => s.dividend > 0 ? `$${s.dividend.toFixed(2)}` : '—' },
-        { label: '52W Range', key: (s: typeof stock) => `$${fmt(s.week52Low)} – $${fmt(s.week52High)}` },
+        { label: 'Price', key: (s: any) => `$${fmt(s.price)}` },
+        { label: 'Market Cap', key: (s: any) => s.marketCap > 0 ? fmtBig(s.marketCap) : '—' },
+        { label: 'P/E Ratio', key: (s: any) => s.pe ? s.pe.toFixed(1) : '—' },
+        { label: 'EV/EBITDA', key: () => '—' },
+        { label: 'Revenue', key: () => '—' },
+        { label: 'Rev. Growth', key: () => '—' },
+        { label: 'Net Margin', key: () => '—' },
+        { label: 'Debt/Equity', key: () => '—' },
+        { label: 'Analyst Target', key: () => '—' },
+        { label: 'Dividend', key: (s: any) => s.dividend > 0 ? `$${s.dividend.toFixed(2)}` : '—' },
+        { label: '52W Range', key: (s: any) => s.week52Low && s.week52High ? `$${fmt(s.week52Low)} – $${fmt(s.week52High)}` : '—' },
     ];
 
     return (
         <div style={{ overflow: 'auto', height: '100%', padding: 12 }}>
+            <div style={{ paddingBottom: 12, fontSize: 11, color: 'var(--text-muted)' }}>* Deep fundamentals requires premium API integration.</div>
             <table>
                 <thead>
                     <tr>
@@ -171,46 +251,6 @@ function FundamentalsTab({ stock, competitors }: { stock: typeof STOCKS[string];
                     ))}
                 </tbody>
             </table>
-        </div>
-    );
-}
-
-function CompetitorTab({ stock, competitors }: { stock: typeof STOCKS[string]; competitors: typeof STOCKS[string][] }) {
-    const all = [stock, ...competitors];
-    const maxCap = Math.max(...all.map(s => s.marketCap));
-
-    return (
-        <div style={{ overflow: 'auto', height: '100%', padding: 12 }}>
-            <div style={{ marginBottom: 12, fontSize: 11, color: 'var(--text-muted)' }}>
-                Showing {competitors.length} peers in the <span style={{ color: 'var(--amber)' }}>{stock.sector}</span> sector
-            </div>
-            {all.map((s, i) => (
-                <div key={s.ticker} style={{
-                    display: 'flex', alignItems: 'center', gap: 12,
-                    padding: '10px 12px', marginBottom: 6,
-                    background: i === 0 ? 'var(--amber-muted)' : 'var(--bg-panel-alt)',
-                    border: `1px solid ${i === 0 ? 'var(--border-strong)' : 'var(--border)'}`,
-                    borderRadius: 4,
-                }}>
-                    <span style={{ width: 18, fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>#{i + 1}</span>
-                    <span style={{ width: 56, fontWeight: 700, color: i === 0 ? 'var(--amber)' : 'var(--text-primary)', letterSpacing: '0.06em' }}>{s.ticker}</span>
-                    <span style={{ flex: 1, fontSize: 11, color: 'var(--text-secondary)' }}>{s.name}</span>
-                    {/* Market cap bar */}
-                    <div style={{ width: 120 }}>
-                        <div style={{ height: 6, background: 'var(--bg-active)', borderRadius: 3, overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${(s.marketCap / maxCap) * 100}%`, background: i === 0 ? 'var(--amber)' : 'var(--blue)', borderRadius: 3, transition: 'width 0.3s' }} />
-                        </div>
-                    </div>
-                    <span style={{ width: 90, textAlign: 'right', fontSize: 12, fontVariantNumeric: 'tabular-nums', color: 'var(--text-secondary)' }}>{fmtBig(s.marketCap)}</span>
-                    <span style={{ width: 70, textAlign: 'right', fontSize: 13, fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: 'var(--text-primary)' }}>${fmt(s.price)}</span>
-                    <span style={{ width: 70, textAlign: 'right', fontSize: 12, fontWeight: 600, color: s.changePct >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                        {fmtPct(s.changePct)}
-                    </span>
-                    <span style={{ width: 50, textAlign: 'right', fontSize: 11, color: 'var(--text-muted)' }}>
-                        {s.pe ? `${s.pe.toFixed(1)}x` : '—'}
-                    </span>
-                </div>
-            ))}
         </div>
     );
 }
