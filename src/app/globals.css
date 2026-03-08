@@ -6,13 +6,21 @@
 
 :root {
   /* Core palette */
-  --bg-void: #050507;
-  --bg-base: #08090d;
-  --bg-surface: #0d0f14;
-  --bg-panel: #111318;
-  --bg-panel-alt: #141720;
-  --bg-hover: #1a1e28;
-  --bg-active: #212636;
+  --bg-void: #050510;
+  --bg-base: #07080e;
+  --bg-surface: #0a0b12;
+  --bg-panel: #0f1018;
+  --bg-panel-alt: #12141e;
+  --bg-hover: #181a26;
+  --bg-active: #1e2130;
+
+  /* Glassmorphism */
+  --glass-bg: rgba(8, 9, 20, 0.65);
+  --glass-bg-light: rgba(15, 16, 28, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.07);
+  --glass-border-top: rgba(255, 255, 255, 0.12);
+  --glass-blur: blur(20px);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 
   /* Amber / Bloomberg orange */
   --amber: #FF9900;
@@ -79,7 +87,7 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 0%, #11141c 0%, var(--bg-void) 100%);
+  background: #050510;
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: 13px;
@@ -288,12 +296,12 @@ body {
    PANELS
    ============================================================ */
 .panel {
-  background: var(--panel-gradient);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-top: 1px solid var(--glass-border-top);
+  box-shadow: var(--glass-shadow);
   border-radius: var(--radius);
   display: flex;
   flex-direction: column;
@@ -308,8 +316,8 @@ body {
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--amber-dim), transparent);
-  opacity: 0.4;
+  background: linear-gradient(90deg, transparent, #FF8C00, #A020F0, transparent);
+  opacity: 0.5;
 }
 
 .panel-header {
@@ -317,8 +325,8 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: rgba(0, 0, 0, 0.2);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.25);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
 }
 
@@ -396,10 +404,10 @@ button {
 .tab-bar {
   display: flex;
   align-items: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(13, 15, 20, 0.8);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(5, 5, 18, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   flex-shrink: 0;
 }
 
@@ -437,13 +445,14 @@ button {
 
 .tab.active {
   color: var(--text-primary);
-  background: linear-gradient(180deg, transparent 0%, rgba(255, 153, 0, 0.05) 100%);
+  background: linear-gradient(180deg, transparent 0%, rgba(255, 140, 0, 0.07) 100%);
 }
 
 .tab.active::after {
   opacity: 1;
   transform: scaleX(1);
-  box-shadow: 0 -2px 8px rgba(255, 153, 0, 0.4);
+  background: linear-gradient(90deg, #FF8C00, #FF2D55, #A020F0);
+  box-shadow: 0 0 12px rgba(255, 45, 85, 0.5);
 }
 
 /* ============================================================
@@ -720,24 +729,37 @@ tr:hover td {
    STAT CARD
    ============================================================ */
 .stat-card {
-  background: rgba(20, 23, 32, 0.4);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--glass-bg-light);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-top: 1px solid var(--glass-border-top);
   border-radius: var(--radius);
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  transition: all 0.2s;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transition: all 0.25s;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 140, 0, 0.5), transparent);
 }
 
 .stat-card:hover {
-  border-color: rgba(255, 255, 255, 0.15);
-  background: rgba(20, 23, 32, 0.6);
+  border-color: rgba(255, 140, 0, 0.25);
+  background: rgba(20, 20, 40, 0.65);
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(255, 140, 0, 0.08);
 }
 
 .stat-label {
@@ -914,13 +936,22 @@ tr:hover td {
 /* ============================================================
    GRID LAYOUT
    ============================================================ */
+.aurora-fixed {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
 .terminal-root {
   width: 100vw;
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: radial-gradient(circle at 50% 0%, #11141c 0%, var(--bg-void) 100%);
+  background: #050510;
   overflow: hidden;
+  position: relative;
+  z-index: 1;
 }
 
 .terminal-content {

@@ -44,10 +44,16 @@ export default function TopBar({ activeTab, onTabChange, onTickerSearch }: TopBa
         <div style={{
             display: 'flex',
             flexDirection: 'column',
-            background: 'var(--bg-surface)',
-            borderBottom: '1px solid var(--border)',
+            background: 'rgba(5,5,18,0.82)',
+            backdropFilter: 'blur(24px)',
+            WebkitBackdropFilter: 'blur(24px)',
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
             flexShrink: 0,
+            position: 'relative',
+            zIndex: 50,
         }}>
+            {/* Gradient top-border line matching landing page */}
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg,transparent,#FF8C00 30%,#A020F0 70%,transparent)', pointerEvents: 'none' }} />
             {/* Top row */}
             <div style={{
                 display: 'flex',
@@ -71,12 +77,15 @@ export default function TopBar({ activeTab, onTabChange, onTickerSearch }: TopBa
                         fontSize: 14,
                         fontWeight: 700,
                         letterSpacing: '0.15em',
-                        color: 'var(--amber)',
+                        background: 'linear-gradient(90deg, #FF8C00, #FF2D55, #A020F0)',
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                        backgroundClip: 'text',
                         textTransform: 'uppercase',
                     }}>
                         ALLTERMINALS
                     </span>
-                    <span style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 500 }}>PRO TERMINAL</span>
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.08em', fontWeight: 500 }}>PRO TERMINAL</span>
                 </div>
 
                 {/* Search / Command input */}
@@ -86,10 +95,12 @@ export default function TopBar({ activeTab, onTabChange, onTickerSearch }: TopBa
                     display: 'flex',
                     alignItems: 'center',
                     gap: 8,
-                    background: 'var(--bg-base)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 2,
+                    background: 'rgba(5,5,20,0.7)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 6,
                     padding: '5px 12px',
+                    backdropFilter: 'blur(12px)',
+                    WebkitBackdropFilter: 'blur(12px)',
                 }}>
                     <span style={{ color: 'var(--amber)', fontSize: 12, fontWeight: 700 }}>▸</span>
                     <input

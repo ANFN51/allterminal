@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import AuroraCanvas from '@/components/AuroraCanvas';
 import TopBar from '../TopBar/TopBar';
 import TickerStrip from '../TickerStrip/TickerStrip';
 import MarketsOverview from '../Markets/MarketsOverview';
@@ -64,6 +65,10 @@ export default function Terminal() {
 
     return (
         <div className="terminal-root">
+            {/* Aurora background — fixed behind everything */}
+            <div className="aurora-fixed">
+                <AuroraCanvas opacity={0.6} />
+            </div>
             <TopBar
                 activeTab={activeTab}
                 onTabChange={t => setActiveTab(t as Tab)}
@@ -168,7 +173,7 @@ export default function Terminal() {
             </div>
 
             {/* Status bar */}
-            <div style={{ height: 22, background: 'var(--bg-void)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 16, padding: '0 12px', flexShrink: 0 }}>
+            <div style={{ height: 22, background: 'rgba(5,5,18,0.8)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 16, padding: '0 12px', flexShrink: 0 }}>
                 <span style={{ fontSize: 9, color: 'var(--amber)', fontWeight: 600, letterSpacing: '0.1em' }}>⬡ ALLTERMINALS PRO</span>
                 <span style={{ fontSize: 9, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
                     <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green)', display: 'inline-block', boxShadow: '0 0 4px var(--green)' }} />
